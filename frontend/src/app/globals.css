@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/* --- Attention animations (floating help button, "Solutions" menu item) --- */
+
+/* A ring that expands from the element's border and fades away. */
+@keyframes rfdsl-ripple {
+  0% { transform: scale(0.94); opacity: 0.75; }
+  70%, 100% { transform: scale(1.22, 1.5); opacity: 0; }
+}
+.rfdsl-ripple { position: relative; }
+.rfdsl-ripple::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1.5px solid #0a0a0a;
+  pointer-events: none;
+  animation: rfdsl-ripple 2.6s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+}
+
+/* Floating help button: a light sweeping round its border, plus pulse waves. */
+@keyframes rfdsl-spin { to { transform: rotate(360deg); } }
+@keyframes rfdsl-pulse {
+  0% { transform: scale(1); opacity: 0.55; }
+  80%, 100% { transform: scale(1.75); opacity: 0; }
+}
+.rfdsl-fab-ring { animation: rfdsl-spin 2.8s linear infinite; }
+.rfdsl-fab-pulse { animation: rfdsl-pulse 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite; }
+.rfdsl-fab-pulse-late { animation: rfdsl-pulse 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) 1.2s infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rfdsl-ripple::after, .rfdsl-fab-ring, .rfdsl-fab-pulse, .rfdsl-fab-pulse-late { animation: none; }
+  .rfdsl-ripple::after, .rfdsl-fab-pulse, .rfdsl-fab-pulse-late { opacity: 0; }
+}
