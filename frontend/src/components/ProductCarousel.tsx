@@ -15,9 +15,23 @@ export type Product = {
   badges?: { key: string; text: string; className: string }[]; // e.g. "New", "20% off"
 };
 
-// With this many products or fewer the row doesn't move (it would otherwise
-// show the same products twice side by side); the panels simply sit in a row.
+// Panels visible at once: 1 below 450px, 2 from 450px, 3 from 600px, 4 from
+// 1250px. When every product fits on screen the row doesn't move (it would
+// otherwise show the same product twice side by side) and the panels simply
+// sit in a still row; when they don't fit, it's a carousel. For 2-4 products
+// that depends on the width, so both are rendered and CSS shows the right one
+// (no flash before JavaScript loads). Full class names so Tailwind sees them.
 const STATIC_MAX = 4;
+const HIDE_STILL_ROW: Record<number, string> = {
+  2: "max-[450px]:hidden",
+  3: "max-[600px]:hidden",
+  4: "max-[1250px]:hidden",
+};
+const HIDE_MOVING_ROW: Record<number, string> = {
+  2: "min-[450px]:hidden",
+  3: "min-[600px]:hidden",
+  4: "min-[1250px]:hidden",
+};
 
 // Colours of the name strip and the hover tint over the photo. Each home page
 // section passes its own (matching its badge); full class names so Tailwind sees them.
@@ -54,6 +68,18 @@ export default function ProductCarousel({
   tone?: PanelTone;
 }) {
   const count = products.length;
+  if (count <= 1) return <StaticRow products={products} className={className} tone={tone} />;
+  if (count > STATIC_MAX) return <MovingRow products={products} className={className} tone={tone} />;
+  return (
+    <>
+      <StaticRow products={products} className={`${className ?? ""} ${HIDE_STILL_ROW[count]}`} tone={tone} />
+      <MovingRow products={products} className={`${className ?? ""} ${HIDE_MOVING_ROW[count]}`} tone={tone} />
+    </>
+  );
+}
+
+function MovingRow({ products, className, tone }: { products: Product[]; className?: string; tone: PanelTone }) {
+  const count = products.length;
   // The products are rendered three times in a row and the view stays within
   // the middle copy, so there is always content on both sides while moving or
   // dragging. After each move it is shifted back into the middle copy unseen.
@@ -85,9 +111,10 @@ export default function ProductCarousel({
 
   // Automatic moves; the timer restarts after hovering, focus or dragging ends.
   useEffect(() => {
-    if (hovered || focusedWithin || tabHidden || dragging || count <= STATIC_MAX) return;
+    if (hovered || focusedWithin || tabHidden || dragging) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const timer = setInterval(() => {
+      if (!viewportRef.current?.offsetParent) return; // hidden by CSS (the still row is showing)
       setAnimate(true);
       setIndex((i) => i + 1);
     }, STEP_EVERY_MS);
@@ -97,10 +124,11 @@ export default function ProductCarousel({
   // Very fast repeated clicks/keys keep restarting the slide, so the shift back
   // into the middle copy waits; stop at the ends of the 3 copies until it happens.
   const move = (panels: number) => {
+    const last = 3 * count - visiblePanels(); // first slide of the last full view
     setAnimate(true);
     setIndex((i) => {
       const next = i + panels;
-      return next < 0 || next > 3 * count - 4 ? i : next;
+      return next < 0 || next > last ? i : next;
     });
   };
 
@@ -118,6 +146,9 @@ export default function ProductCarousel({
     const [a, b] = trackRef.current?.children ?? [];
     return a && b ? b.getBoundingClientRect().left - a.getBoundingClientRect().left : 1;
   };
+
+  // Panels currently visible in the row.
+  const visiblePanels = () => Math.max(1, Math.round((viewportRef.current?.clientWidth ?? 0) / stepPx()));
 
   // A press only becomes a drag once it moves a few pixels; until then it is a
   // normal click on the product link. The pointer is captured only for real
@@ -176,7 +207,7 @@ export default function ProductCarousel({
     const viewport = viewportRef.current;
     if (!viewport) return;
     viewport.scrollLeft = 0; // undo the browser's own scroll-into-view inside the clipped row
-    const visible = Math.max(1, Math.round(viewport.clientWidth / stepPx()));
+    const visible = visiblePanels();
     const current = toMiddle(index);
     if (slide < current || slide >= current + visible) {
       setAnimate(true);
@@ -191,13 +222,11 @@ export default function ProductCarousel({
     e.preventDefault();
   };
 
-  if (count <= STATIC_MAX) return <StaticRow products={products} className={className} tone={tone} />;
-
   return (
     <div
       role="region"
       aria-roledescription="carousel"
-      aria-label="Popular products (drag, swipe, use the arrow buttons or the arrow keys)"
+      aria-label="Products (drag, swipe, use the arrow buttons or the arrow keys)"
       onKeyDown={onKeyDown}
       onFocus={() => setFocusedWithin(true)}
       onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setFocusedWithin(false)}

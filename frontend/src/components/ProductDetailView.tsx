@@ -60,85 +60,97 @@ export default function ProductDetailView({ product, preview = false }: { produc
         </Link>
       </nav>
 
-      <div className="mt-6 grid gap-8 lg:mt-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-12 xl:gap-16">
+      {/*
+        Desktop: photos on the left, heading and details stacked on the right.
+        Phones (one column): heading (category, badges, name) first, then the
+        photos, then the details. The right column's wrapper is display:contents
+        on phones, so the heading and details become grid items of their own and
+        the heading can move above the photos (order-first).
+      */}
+      <div className="mt-6 grid gap-6 lg:mt-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-12 xl:gap-16">
         {/* Photos stay in view on desktop, just below the pinned back button. */}
         <div className={`lg:sticky lg:self-start ${preview ? "lg:top-[72px]" : "lg:top-[180px]"}`}>
           <ProductGallery images={product.gallery} name={product.name} icon={category?.icon} />
         </div>
 
-        <div className="min-w-0">
-          <p className="flex flex-wrap items-center gap-2 text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase">
-            <span>{category?.label ?? product.category}</span>
-            {product.subcategory && (
-              <>
-                <span aria-hidden="true" className="text-slate-300">/</span>
-                <span>{product.subcategory}</span>
-              </>
-            )}
-          </p>
-          <ProductBadges product={product} className="mt-3" />
-          <h1 className="mt-2 text-[clamp(1.875rem,3vw,2.75rem)] leading-tight font-extrabold tracking-[-0.02em] text-neutral-950">
-            {product.name}
-          </h1>
-          {product.tagline && (
-            <p className="mt-3 text-lg leading-snug font-semibold text-neutral-800 lg:text-xl">{product.tagline}</p>
-          )}
-          {product.summary && <p className="mt-4 max-w-3xl leading-relaxed text-neutral-600">{product.summary}</p>}
-
-          {facts.length > 0 && (
-            <dl className="mt-5 flex flex-wrap gap-2">
-              {facts.map((f) => (
-                <div key={f.label} className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm">
-                  <dt className="text-slate-500">{f.label}</dt>
-                  <dd className="font-semibold text-neutral-900">{f.value}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-
-          {product.highlights.map((section, si) => (
-            <section
-              key={si}
-              aria-label={section.title || undefined}
-              className="mt-6 overflow-hidden rounded-lg border border-slate-200 bg-white"
-            >
-              {section.title && (
-                <h2 className="border-b border-slate-200 bg-slate-50 px-5 py-3.5 font-semibold text-neutral-950">{section.title}</h2>
+        <div className="contents lg:block lg:min-w-0">
+          <div className="min-w-0 max-lg:order-first">
+            <p className="flex flex-wrap items-center gap-2 text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase">
+              <span>{category?.label ?? product.category}</span>
+              {product.subcategory && (
+                <>
+                  <span aria-hidden="true" className="text-slate-300">/</span>
+                  <span>{product.subcategory}</span>
+                </>
               )}
-              <ul className="grid gap-x-8 gap-y-1 px-5 py-4 sm:grid-cols-2">
-                {section.items.map((item, ii) => (
-                  <li key={ii} className="flex items-start gap-3 py-2 text-[15px] leading-snug text-neutral-800">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-950">
-                      <FeatureIcon name={item.icon} className="size-5" />
-                    </span>
-                    <span className="pt-2">{item.text}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
+            </p>
+            <ProductBadges product={product} className="mt-3" />
+            <h1 className="mt-2 text-[clamp(1.875rem,3vw,2.75rem)] leading-tight font-extrabold tracking-[-0.02em] text-neutral-950">
+              {product.name}
+            </h1>
+          </div>
 
-          <div className="mt-7 flex flex-wrap gap-3">
-            <a
-              href={preview ? undefined : `/#contact`}
-              className="inline-flex h-12 items-center gap-2 rounded-full bg-black px-6 text-[15px] font-semibold text-white transition-colors outline-none hover:bg-[#0b1f45] focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2"
-            >
-              Enquire about this product
-              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round" className="size-4">
-                <path d="M5 12h14M13 6l6 6-6 6" />
-              </svg>
-            </a>
-            {datasheet && (
-              <a
-                href={datasheet.url}
-                target="_blank"
-                rel="noopener"
-                className="inline-flex h-12 items-center gap-2 rounded-full border border-slate-300 bg-white px-6 text-[15px] font-semibold text-neutral-900 transition-colors outline-none hover:border-[#0b1f45] focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2"
-              >
-                <LinkIcon kind="datasheet" />
-                Datasheet
-              </a>
+          <div className="min-w-0">
+            {product.tagline && (
+              <p className="mt-3 text-lg leading-snug font-semibold text-neutral-800 lg:text-xl">{product.tagline}</p>
             )}
+            {product.summary && <p className="mt-4 max-w-3xl leading-relaxed text-neutral-600">{product.summary}</p>}
+
+            {facts.length > 0 && (
+              <dl className="mt-5 flex flex-wrap gap-2">
+                {facts.map((f) => (
+                  <div key={f.label} className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm">
+                    <dt className="text-slate-500">{f.label}</dt>
+                    <dd className="font-semibold text-neutral-900">{f.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+
+            {product.highlights.map((section, si) => (
+              <section
+                key={si}
+                aria-label={section.title || undefined}
+                className="mt-6 overflow-hidden rounded-lg border border-slate-200 bg-white"
+              >
+                {section.title && (
+                  <h2 className="border-b border-slate-200 bg-slate-50 px-5 py-3.5 font-semibold text-neutral-950">{section.title}</h2>
+                )}
+                <ul className="grid gap-x-8 gap-y-1 px-5 py-4 sm:grid-cols-2">
+                  {section.items.map((item, ii) => (
+                    <li key={ii} className="flex items-start gap-3 py-2 text-[15px] leading-snug text-neutral-800">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-950">
+                        <FeatureIcon name={item.icon} className="size-5" />
+                      </span>
+                      <span className="pt-2">{item.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+
+            <div className="mt-7 flex flex-wrap gap-3">
+              <a
+                href={preview ? undefined : `/#contact`}
+                className="inline-flex h-12 items-center gap-2 rounded-full bg-black px-6 text-[15px] font-semibold text-white transition-colors outline-none hover:bg-[#0b1f45] focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2"
+              >
+                Enquire about this product
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                  <path d="M5 12h14M13 6l6 6-6 6" />
+                </svg>
+              </a>
+              {datasheet && (
+                <a
+                  href={datasheet.url}
+                  target="_blank"
+                  rel="noopener"
+                  className="inline-flex h-12 items-center gap-2 rounded-full border border-slate-300 bg-white px-6 text-[15px] font-semibold text-neutral-900 transition-colors outline-none hover:border-[#0b1f45] focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2"
+                >
+                  <LinkIcon kind="datasheet" />
+                  Datasheet
+                </a>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -220,10 +232,12 @@ export default function ProductDetailView({ product, preview = false }: { produc
   );
 }
 
+// Lower section headings (Overview, Specifications, ...): a step smaller and a
+// softer black than the product name at the top, so they read as secondary.
 function SectionTitle({ id, children }: { id: string; children: React.ReactNode }) {
   return (
     <div className="flex items-end gap-8">
-      <h2 id={id} className="scroll-mt-44 text-[clamp(1.5rem,2.2vw,2.25rem)] leading-tight font-extrabold tracking-[-0.02em] text-neutral-950 uppercase">
+      <h2 id={id} className="scroll-mt-44 text-[clamp(1.25rem,1.7vw,1.75rem)] leading-tight font-extrabold tracking-[-0.01em] text-neutral-700 uppercase">
         {children}
       </h2>
       <span aria-hidden="true" className="mb-[0.7em] hidden h-px flex-1 bg-linear-to-r from-slate-300 to-transparent sm:block" />

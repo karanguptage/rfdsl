@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import SiteFooter from "@/components/SiteFooter";
 import SiteHeader from "@/components/SiteHeader";
 import HelpFab from "@/components/HelpFab";
+import ScrollToTop from "@/components/ScrollToTop";
 import VisitTracker from "@/components/VisitTracker";
 import { SITE, SITE_URL } from "@/lib/site";
 import "./globals.css";
@@ -150,6 +151,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           {children}
         </div>
         <SiteFooter />
+        {/* New pages open at the top (reads the URL, so it sits in its own Suspense). */}
+        <Suspense fallback={null}>
+          <ScrollToTop />
+        </Suspense>
         {/* Page views for /admin > Visitors (reads the URL, so it sits in its own Suspense). */}
         <Suspense fallback={null}>
           <VisitTracker />
