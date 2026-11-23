@@ -13,7 +13,7 @@ cd backend
 python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt
 copy .env.example .env          # then set ADMIN_PASSWORD and SECRET_KEY (already done locally)
-.venv\Scripts\python init_db.py # creates database RFDSL + table, loads the starter products
+.venv\Scripts\python init_db.py # (re)creates database RFDSL from sql/schema.sql, loads the starter products
 
 # 2. Backend (every time)  ->  http://127.0.0.1:8000  (API docs: /docs)
 .venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
@@ -27,7 +27,9 @@ npm run dev
 The site calls the API at `http://127.0.0.1:8000` by default; set `API_URL` for the frontend if it runs elsewhere.
 The browser reaches the API and uploaded files through the site itself (`/api/*`, `/uploads/*` are forwarded, see `frontend/next.config.ts`).
 
-`init_db.py --reset` drops the products table and reloads the starter data (deletes everything entered in /admin).
+`init_db.py` always starts from scratch: if the database already exists it is deleted first, then rebuilt from
+`backend/sql/schema.sql` with the starter products. Everything stored in it is lost (products entered in /admin,
+messages and replies, visitor statistics, chats, knowledge notes); files in `backend/uploads` are kept.
 
 ## Pages
 
@@ -66,12 +68,12 @@ working key, chats go straight to staff. If the model doesn't support web search
 
 ## Home page product sections
 
-Each product has three independent flags (columns `is_popular`, `is_new`, `is_on_sale` + optional `sale_label`),
-set in the editor ("Homepage sections") or with the Popular / New / Sale pills in the admin product list.
-The home page shows "The most popular products", "New arrivals" and "Special offers" from the published
-products with each flag (`GET /api/products/featured`); a section with no products isn't shown. With 4 or fewer
-products a section is a still row instead of the moving carousel. Flags also show as badges on the product
-panels and product page. `init_db.py` adds the columns to an existing database.
+Each product has three badges (columns `is_popular`, `is_new`, `is_on_sale` + optional `sale_label`), shown on the
+product panels and product page, and a separate "Show on home page" switch for each (`home_popular`, `home_new`,
+`home_sale`), both set in the editor ("Badges & homepage sections"). A switch only counts while its badge is on:
+the home page shows "The most popular products", "New arrivals" and "Special offers" from the published products
+with both the badge and the switch (`GET /api/products/featured`); a section with no products isn't shown. With 4
+or fewer products a section is a still row instead of the moving carousel.
 
 ## Visitor tracking
 
