@@ -1,5 +1,6 @@
 import Link from "next/link";
 import FeatureIcon from "@/components/FeatureIcon";
+import HowWeWorkContact from "@/components/HowWeWorkContact";
 import ProductBadges from "@/components/ProductBadges";
 import ProductGallery from "@/components/ProductGallery";
 import ScrollToHash from "@/components/ScrollToHash";
@@ -131,7 +132,7 @@ export default function ProductDetailView({ product, preview = false }: { produc
 
             <div className="mt-7 flex flex-wrap gap-3">
               <a
-                href={preview ? undefined : `/#contact`}
+                href={preview ? undefined : "#contact"}
                 className="inline-flex h-12 items-center gap-2 rounded-full bg-black px-6 text-[15px] font-semibold text-white transition-colors outline-none hover:bg-[#0b1f45] focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2"
               >
                 Enquire about this product
@@ -227,6 +228,15 @@ export default function ProductDetailView({ product, preview = false }: { produc
           <SectionTitle id="related-title">Related products</SectionTitle>
           <ProductGrid products={product.related} className="mt-6 lg:mt-8" />
         </section>
+      )}
+
+      {/* Contact form (left) and "How we work" (right); not in the /admin preview. */}
+      {!preview && (
+        <HowWeWorkContact
+          reversed
+          className="mt-14 lg:mt-20"
+          defaultMessage={`Hello. I would like to inquire for more details regarding the "${product.name}" featured by your company.`}
+        />
       )}
     </article>
   );

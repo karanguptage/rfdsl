@@ -30,7 +30,8 @@ export const CONTACT_DETAILS = [
 // contact details on top. Expects to sit in a grid/flex column (it stretches
 // to the column's height from 1280px). `compact` (About Us page) shows only
 // the heading, tagline and form, without the intro text and the panorama.
-export default function ContactColumn({ compact = false }: { compact?: boolean }) {
+// `defaultMessage` pre-fills the form's message (product pages).
+export default function ContactColumn({ compact = false, defaultMessage }: { compact?: boolean; defaultMessage?: string }) {
   return (
     <>
     {/* id="contact": target of the banner's "Get a quote" button (stops below the sticky header). */}
@@ -56,7 +57,7 @@ export default function ContactColumn({ compact = false }: { compact?: boolean }
       </p>
       </>
       )}
-      <ContactForm className="mt-6 md:mt-8" />
+      <ContactForm className="mt-6 md:mt-8" defaultMessage={defaultMessage} />
 
       {!compact && (
       <>

@@ -46,7 +46,9 @@ function Field({
 // catches spam bots.
 type SendState = { kind: "idle" | "sending" | "sent" } | { kind: "error"; message: string };
 
-export default function ContactForm({ className }: { className?: string }) {
+// `defaultMessage` pre-fills the message (e.g. on a product page, the product's
+// name); it comes back after the form is sent and reset.
+export default function ContactForm({ className, defaultMessage }: { className?: string; defaultMessage?: string }) {
   const id = useId();
   const [state, setState] = useState<SendState>({ kind: "idle" });
 
@@ -120,6 +122,7 @@ export default function ContactForm({ className }: { className?: string }) {
             name="message"
             rows={11}
             required
+            defaultValue={defaultMessage}
             placeholder="Tell us about your enquiry or requirements"
             className={`${FIELD} block min-h-48 resize-y py-3 leading-relaxed`}
           />
