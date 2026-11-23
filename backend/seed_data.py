@@ -188,6 +188,7 @@ def _basic(order, slug, name, image, category, subcategory, brand, frequency, su
         "gallery": [image],
         "sort_order": order,
         "is_popular": True,  # these were the home page's "most popular products"
+        "home_popular": True,
     }
 
 

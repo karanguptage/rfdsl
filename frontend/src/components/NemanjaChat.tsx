@@ -9,8 +9,12 @@ import { categoryOf, isRemoteImage } from "@/lib/catalog";
 // Chat with Nemanja, the AI asset-tracking consultant (OpenAI, via the Python
 // API). The conversation id + secret token are kept in this browser
 // (localStorage) so a reload or a later visit continues the same chat; a
-// staff email links back with ?chat=<id>&t=<token>. New messages are polled:
-// every 1.2s while Nemanja is working, every 5s otherwise (staff replies).
+// staff email links back with ?chat=<id>&t=<token>. A first visit starts a
+// chat straight away; the API saves Nemanja's fixed greeting as its first
+// message (no AI call until the visitor writes).
+// New messages are polled: every 1.2s while Nemanja is working, every 5s
+// otherwise (staff replies). Polls can overlap (Strict Mode, the route being
+// hidden and shown again by <Activity>, send()), so results are merged by id.
 
 type Card = {
   slug: string;
@@ -38,12 +42,13 @@ type State = {
 type Conv = { id: number; token: string };
 
 const STORE_KEY = "rfdsl-nemanja-chat";
-const STARTERS = [
-  "We need to track IT equipment across three offices",
-  "Which handheld reader suits a cold store?",
-  "RFID for hotel linen and laundry",
-  "Tagging metal tools and equipment",
-];
+const EMPTY_STATE: State = {
+  status: "ai",
+  busy: false,
+  activity: null,
+  available: true,
+  messages: [],
+};
 
 function loadConv(): Conv | null {
   try {
@@ -93,42 +98,96 @@ export default function NemanjaChat() {
     }
     return loadConv();
   });
-  const [state, setState] = useState<State>({
-    status: "ai",
-    busy: false,
-    activity: null,
-    available: true,
-    messages: [],
-  });
+  const [state, setState] = useState<State>(EMPTY_STATE);
   const [pending, setPending] = useState<string | null>(null); // visitor text sent, not yet back from the server
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const lastId = useRef(0);
+  const convRef = useRef(conv); // the current chat, for async work that outlives a render
+  const starting = useRef<Promise<Conv> | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const textarea = useRef<HTMLTextAreaElement>(null);
 
-  const poll = useCallback(async (c: Conv) => {
-    try {
-      const s = await api<State & { id: number }>(
-        `/api/chat/${c.id}?token=${encodeURIComponent(c.token)}&after=${lastId.current}`,
-      );
-      if (s.messages.length)
-        lastId.current = s.messages[s.messages.length - 1].id;
-      setState((prev) => ({
-        ...s,
-        messages: [...prev.messages, ...s.messages],
-      }));
-      if (s.messages.some((m) => m.role === "visitor")) setPending(null);
-    } catch (e) {
-      if (e instanceof Error && /not found/i.test(e.message)) {
-        // The saved chat no longer exists: start fresh.
-        saveConv(null);
-        setConv(null);
-      }
-    }
+  // Switch to another chat (or none). Clears what was shown for the old one.
+  const switchConv = useCallback((c: Conv | null) => {
+    saveConv(c);
+    convRef.current = c;
+    lastId.current = 0;
+    setConv(c);
+    setPending(null);
+    setState((prev) => ({ ...EMPTY_STATE, available: prev.available }));
   }, []);
+
+  // One start at a time (Strict Mode runs effects twice). The new chat already
+  // holds Nemanja's greeting; the poll picks it up.
+  const startConv = useCallback(() => {
+    starting.current ??= api<Conv>("/api/chat/start", {
+      method: "POST",
+      body: JSON.stringify({ page: "/solutions" }),
+    })
+      .then((started) => {
+        const c = { id: started.id, token: started.token };
+        switchConv(c);
+        return c;
+      })
+      .finally(() => {
+        starting.current = null;
+      });
+    return starting.current;
+  }, [switchConv]);
+
+  const poll = useCallback(
+    async (c: Conv) => {
+      try {
+        const s = await api<State & { id: number }>(
+          `/api/chat/${c.id}?token=${encodeURIComponent(c.token)}&after=${lastId.current}`,
+        );
+        if (convRef.current?.id !== c.id) return; // the chat was replaced meanwhile
+        if (s.messages.length)
+          lastId.current = Math.max(
+            lastId.current,
+            s.messages[s.messages.length - 1].id,
+          );
+        // Another poll may already have added some of these: skip known ids.
+        setState((prev) => {
+          const known = new Set(prev.messages.map((m) => m.id));
+          const fresh = s.messages.filter((m) => !known.has(m.id));
+          return {
+            ...s,
+            messages: fresh.length
+              ? [...prev.messages, ...fresh]
+              : prev.messages,
+          };
+        });
+        if (s.messages.some((m) => m.role === "visitor")) setPending(null);
+      } catch (e) {
+        if (
+          e instanceof Error &&
+          /not found/i.test(e.message) &&
+          convRef.current?.id === c.id
+        ) {
+          // The saved chat no longer exists: start a new one.
+          switchConv(null);
+        }
+      }
+    },
+    [switchConv],
+  );
+
+  // No chat yet (first visit, "New chat", or the saved one is gone): start one
+  // so Nemanja can say hello.
+  useEffect(() => {
+    if (conv) return;
+    startConv().catch((e) =>
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Nemanja couldn't start the chat. You can still write below.",
+      ),
+    );
+  }, [conv, startConv]);
 
   // Poll faster while Nemanja is working (kept in a ref for the timer loop).
   const busyRef = useRef(false);
@@ -169,17 +228,7 @@ export default function NemanjaChat() {
     setSending(true);
     setError("");
     try {
-      let c = conv;
-      if (!c) {
-        const started = await api<Conv>("/api/chat/start", {
-          method: "POST",
-          body: JSON.stringify({ page: "/solutions" }),
-        });
-        c = { id: started.id, token: started.token };
-        saveConv(c);
-        lastId.current = 0;
-        setConv(c);
-      }
+      const c = convRef.current ?? (await startConv());
       setPending(t);
       setInput("");
       stickToBottom.current = true;
@@ -200,26 +249,20 @@ export default function NemanjaChat() {
     }
   };
 
+  // A new chat: the effect above starts it (with a fresh greeting).
   const restart = () => {
-    saveConv(null);
-    setConv(null);
-    lastId.current = 0;
-    setPending(null);
     setError("");
-    setState({
-      status: "ai",
-      busy: false,
-      activity: null,
-      available: state.available,
-      messages: [],
-    });
+    switchConv(null);
     window.history.replaceState(null, "", "/solutions");
   };
 
   const closed = state.status === "closed";
-  const showTyping =
-    (state.busy || (pending !== null && state.status === "ai")) && !closed;
   const empty = state.messages.length === 0 && pending === null;
+  const showTyping =
+    (state.busy ||
+      (pending !== null && state.status === "ai") ||
+      (empty && !error)) && // waiting for Nemanja's greeting
+    !closed;
 
   return (
     // Fills the page below the site header (80px phones / 112px desktop) and
@@ -241,29 +284,6 @@ export default function NemanjaChat() {
         aria-live="polite"
       >
         <div className="w-full space-y-4 py-6 @max-[1537px]/page:px-6 @max-[640px]/page:px-4">
-          <Bubble role="assistant">
-            <p>
-              Kia ora! I&apos;m <b>Nemanja</b>, RF Data Systems&apos;
-              asset-tracking consultant. Tell me what you&apos;d like to track
-              (assets, stock, linen, tools, people), where, and how many, and
-              I&apos;ll suggest the right readers, tags, printers and software,
-              with photos and links to the details.
-            </p>
-          </Bubble>
-          {empty && (
-            <div className="flex flex-wrap gap-2 pl-11">
-              {STARTERS.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => send(s)}
-                  className="cursor-pointer rounded-full border border-slate-300 bg-white px-3.5 py-2 text-left text-sm text-neutral-800 transition-colors hover:border-neutral-950"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
           {state.messages.map((m) => (
             <MessageView key={m.id} m={m} />
           ))}
@@ -369,7 +389,9 @@ export default function NemanjaChat() {
               </button>
             </form>
           )}
-          {(conv || !empty) && !closed && (
+          {(pending !== null ||
+            state.messages.some((m) => m.role === "visitor")) &&
+            !closed && (
             <div className="mt-1.5 flex justify-end">
               <button
                 type="button"

@@ -23,11 +23,13 @@ Contact: POST /api/contact                      public form -> saved + emailed
          POST /api/admin/messages/{id}/resend   email it again
          POST /api/admin/messages/{id}/reply    {subject, body, include_original, copy_to_company}
          DELETE /api/admin/messages/{id}
+         POST /api/admin/messages/delete        {ids} or {all: true, status, q}
 Visitors: POST /api/track                       page view from the site's tracker (public)
          GET  /api/admin/visitors/stats?days=   summary (days: 1 today, 7, 30, 90, 0 all)
          GET  /api/admin/visitors?days=&q=&page=
          GET  /api/admin/visitors/{id}          sessions + page views, chronological
          DELETE /api/admin/visitors/{id}        forget one visitor
+         POST /api/admin/visitors/delete        {ids} or {all: true, days, q}
          DELETE /api/admin/visitors?older_than_days=N   delete old tracking data
 Nemanja: POST /api/chat/start                   new chat -> {id, token}
          GET  /api/chat/{id}?token=&after=      status + new messages (polled)
@@ -38,6 +40,8 @@ Nemanja: POST /api/chat/start                   new chat -> {id, token}
          GET  /api/admin/chats/{id}
          POST /api/admin/chats/{id}/reply       {text, email_customer}
          POST /api/admin/chats/{id}/status      {status: ai|human|closed}
+         DELETE /api/admin/chats/{id}
+         POST /api/admin/chats/delete           {ids} or {all: true, status}
          GET  /api/admin/knowledge?status=      notes Nemanja found on the web
          PATCH /api/admin/knowledge/{id}        {status, content, product_slug}
          DELETE /api/admin/knowledge/{id}
@@ -180,8 +184,12 @@ def chat_status():
 
 @public.post("/chat/start")
 def chat_start(body: ChatStartIn, request: Request):
+    ip = client_ip(request)
+    if not nemanja.allow_start(ip):
+        raise HTTPException(429, "Too many new chats from your network. Please wait a few minutes.")
     with db.cursor() as cur:
-        conv = nemanja.start_conversation(cur, client_ip(request), body.page)
+        conv = nemanja.start_conversation(cur, ip, body.page)  # saves Nemanja's fixed greeting too
+    nemanja.cleanup_unused_chats()
     return conv | {"available": nemanja.is_configured()}
 
 
@@ -279,13 +287,17 @@ def admin_patch(product_id: int, body: ProductPatch):
     if body.is_published is not None:
         sets.append("is_published=%s")
         args.append(int(body.is_published))
-    for flag in ("is_popular", "is_new", "is_on_sale"):
+    for flag in ("is_popular", "is_new", "is_on_sale", "home_popular", "home_new", "home_sale"):
         value = getattr(body, flag)
         if value is not None:
             sets.append(f"{flag}=%s")
             args.append(int(value))
             if flag == "is_on_sale" and not value:
                 sets.append("sale_label=NULL")
+            # A home page section only lists products with its badge: removing
+            # the badge also takes the product out of the section.
+            if flag in repo.HOME_FOR_BADGE and not value:
+                sets.append(f"{repo.HOME_FOR_BADGE[flag]}=0")
     if body.sort_order is not None:
         sets.append("sort_order=%s")
         args.append(body.sort_order)
@@ -402,6 +414,31 @@ def admin_message_delete(message_id: int):
             raise HTTPException(404, "Message not found")
 
 
+class BulkDeleteIn(BaseModel):
+    """Either `ids` (the ones ticked in the list) or `all: true`, which deletes
+    everything matching the list's current filter: status (folder), q (search)
+    and days (visitors' period)."""
+    ids: list[int] = Field(default_factory=list, max_length=500)
+    all: bool = False
+    status: str = Field("", max_length=20)
+    q: str = Field("", max_length=200)
+    days: int = Field(0, ge=0, le=365)
+
+
+def _bulk_ids(body: BulkDeleteIn) -> list[int] | None:
+    if body.all:
+        return None
+    if not body.ids:
+        raise HTTPException(400, "Nothing selected")
+    return body.ids
+
+
+@secured.post("/messages/delete")
+def admin_messages_delete(body: BulkDeleteIn):
+    with db.cursor() as cur:
+        return {"deleted": contact.delete_messages(cur, _bulk_ids(body), status=body.status, q=body.q)}
+
+
 @secured.get("/visitors/stats")
 def admin_visitor_stats(days: int = Query(7, ge=0, le=365)):
     with db.cursor() as cur:
@@ -434,6 +471,12 @@ def admin_visitor_delete(visitor_id: int):
         cur.execute("DELETE FROM visitors WHERE id=%s", (visitor_id,))
         if cur.rowcount == 0:
             raise HTTPException(404, "Visitor not found")
+
+
+@secured.post("/visitors/delete")
+def admin_visitors_delete(body: BulkDeleteIn):
+    with db.cursor() as cur:
+        return {"deleted": visitors.delete_visitors(cur, _bulk_ids(body), days=body.days, q=body.q)}
 
 
 @secured.delete("/visitors")
@@ -526,6 +569,19 @@ def admin_chat_status(conv_id: int, body: ChatStatusIn):
     nemanja.set_status(conv_id, body.status)
     with db.cursor() as cur:
         return nemanja.conversation_detail(cur, conv_id)
+
+
+@secured.delete("/chats/{conv_id}", status_code=204)
+def admin_chat_delete(conv_id: int):
+    with db.cursor() as cur:
+        if not nemanja.delete_conversations(cur, [conv_id]):
+            raise HTTPException(404, "Conversation not found")
+
+
+@secured.post("/chats/delete")
+def admin_chats_delete(body: BulkDeleteIn):
+    with db.cursor() as cur:
+        return {"deleted": nemanja.delete_conversations(cur, _bulk_ids(body), status=body.status)}
 
 
 @secured.get("/knowledge")

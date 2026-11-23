@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { SITE, SITE_URL } from "@/lib/site";
 import { adminApi, ApiError, type Message, type MessageFilter, type MessageList, type MessageStatus } from "./api";
-import { AutoTextarea, Button, Icon, ICON, inputClass, Modal } from "./ui";
+import { AutoTextarea, BulkBar, Button, Checkbox, Icon, ICON, inputClass, Modal, useSelection } from "./ui";
 
 const FILTERS: { value: MessageFilter; label: string }[] = [
   { value: "inbox", label: "Inbox" },
@@ -76,6 +76,10 @@ export default function MessagesView({
     onCountsChange();
   }, [onCountsChange]);
 
+  const pageIds = list?.items.map((m) => m.id) ?? [];
+  const selection = useSelection(pageIds, `${filter}|${debouncedQ}|${list?.page ?? page}`);
+  const folder = FILTERS.find((f) => f.value === filter)?.label ?? "All";
+
   return (
     <div className="px-4 py-6 lg:px-6 lg:py-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -131,6 +135,22 @@ export default function MessagesView({
         {/* List (hidden on phones while a message is open). */}
         <div className={selectedId !== null ? "max-lg:hidden" : ""}>
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            {list && (
+              <BulkBar
+                pageIds={pageIds}
+                selection={selection}
+                total={list.total}
+                noun={["message", "messages"]}
+                scope={`“${folder}”${debouncedQ ? ` matching “${debouncedQ}”` : ""}`}
+                deleteSelected={(ids) => adminApi.deleteMessages({ ids })}
+                deleteAll={() => adminApi.deleteMessages({ all: true, status: filter, q: debouncedQ })}
+                onDeleted={(ids) => {
+                  if (selectedId !== null && (ids === "all" || ids.includes(selectedId))) onSelect(null);
+                  setPage(1);
+                  refresh();
+                }}
+              />
+            )}
             {!list && !error && <p className="px-4 py-10 text-center text-sm text-slate-500">Loading…</p>}
             {list?.items.length === 0 && (
               <div className="px-4 py-14 text-center">
@@ -144,14 +164,15 @@ export default function MessagesView({
                 const active = m.id === selectedId;
                 const unread = m.status === "new";
                 return (
-                  <li key={m.id}>
+                  <li key={m.id} className={`flex items-stretch transition-colors ${active ? "bg-slate-100" : selection.has(m.id) ? "bg-sky-50/60" : "hover:bg-slate-50"}`}>
+                    <label className="flex cursor-pointer items-start py-4 pr-1 pl-4">
+                      <Checkbox checked={selection.has(m.id)} onChange={() => selection.toggle(m.id)} label={`Select the message from ${m.first_name} ${m.last_name}`} />
+                    </label>
                     <button
                       type="button"
                       onClick={() => onSelect(m.id)}
                       aria-current={active || undefined}
-                      className={`block w-full cursor-pointer px-4 py-3.5 text-left transition-colors outline-none focus-visible:bg-slate-50 ${
-                        active ? "bg-slate-100" : "hover:bg-slate-50"
-                      }`}
+                      className="block min-w-0 flex-1 cursor-pointer py-3.5 pr-4 pl-2 text-left outline-none focus-visible:bg-slate-50"
                     >
                       <div className="flex items-baseline gap-2">
                         {unread && <span aria-label="Unread" className="size-2 shrink-0 translate-y-[-1px] rounded-full bg-neutral-950" />}

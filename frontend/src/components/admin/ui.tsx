@@ -3,7 +3,7 @@
 // Small form building blocks for the admin pages, in the site's style
 // (slate borders, navy focus ring, black primary buttons).
 
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 export const inputClass =
   "w-full rounded-lg border border-slate-300 bg-white px-3 text-[15px] text-neutral-950 transition outline-none placeholder:text-slate-400 hover:border-slate-400 focus:border-[#0b1f45] focus:ring-4 focus:ring-sky-500/15 disabled:bg-slate-50";
@@ -63,12 +63,13 @@ export function AutoTextarea({ minRows = 1, ...props }: React.TextareaHTMLAttrib
   );
 }
 
-type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "dangerSolid";
 const VARIANTS: Record<ButtonVariant, string> = {
   primary: "bg-black text-white hover:bg-[#0b1f45] border border-black hover:border-[#0b1f45]",
   secondary: "border border-slate-300 bg-white text-neutral-900 hover:border-slate-400 hover:bg-slate-50",
   ghost: "text-neutral-700 hover:bg-slate-100 hover:text-neutral-950",
   danger: "border border-red-200 bg-white text-red-700 hover:bg-red-50 hover:border-red-300",
+  dangerSolid: "border border-red-600 bg-red-600 text-white hover:bg-red-700 hover:border-red-700",
 };
 
 export function Button({
@@ -187,20 +188,233 @@ export function Modal({
   );
 }
 
-export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+export function Toggle({
+  checked,
+  onChange,
+  label,
+  disabled = false,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors outline-none focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 ${
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors outline-none focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 ${
         checked ? "bg-emerald-600" : "bg-slate-300"
       }`}
     >
       <span className={`inline-block size-5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-5.5" : "translate-x-0.5"}`} />
     </button>
+  );
+}
+
+export function Checkbox({
+  checked,
+  indeterminate = false,
+  onChange,
+  label,
+  disabled,
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  disabled?: boolean;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      aria-label={label}
+      title={label}
+      checked={checked}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.checked)}
+      className="size-4 shrink-0 cursor-pointer accent-neutral-950 disabled:cursor-not-allowed"
+    />
+  );
+}
+
+// ------------------------------------------------------------------ bulk delete
+
+export type Selection = ReturnType<typeof useSelection>;
+
+// The rows ticked on the current page of a list. Cleared when the list's
+// filter, search or page changes (resetKey); rows no longer shown don't count.
+export function useSelection(pageIds: number[], resetKey: string) {
+  const [picked, setPicked] = useState<ReadonlySet<number>>(() => new Set());
+  const [key, setKey] = useState(resetKey);
+  if (key !== resetKey) {
+    setKey(resetKey);
+    setPicked(new Set());
+  }
+  const selected = pageIds.filter((id) => picked.has(id));
+  return {
+    selected,
+    has: (id: number) => picked.has(id),
+    toggle: (id: number) =>
+      setPicked((p) => {
+        const next = new Set(p);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      }),
+    setAll: (on: boolean) => setPicked(on ? new Set(pageIds) : new Set()),
+    clear: () => setPicked(new Set()),
+  };
+}
+
+// Toolbar on top of a list: tick all on this page, delete the ticked rows, or
+// delete everything matching the list's current filter (all pages). Deleting
+// is confirmed in a dialog; "all" must be confirmed by typing DELETE.
+export function BulkBar({
+  pageIds,
+  selection,
+  total,
+  noun,
+  scope,
+  deleteSelected,
+  deleteAll,
+  onDeleted,
+}: {
+  pageIds: number[];
+  selection: Selection;
+  total: number; // everything matching the filter, all pages
+  noun: [singular: string, plural: string];
+  scope: string; // e.g. the filter's name, for the confirmation
+  deleteSelected: (ids: number[]) => Promise<unknown>;
+  deleteAll: () => Promise<unknown>;
+  onDeleted: (ids: number[] | "all") => void;
+}) {
+  const [confirming, setConfirming] = useState<"selected" | "all" | null>(null);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const n = selection.selected.length;
+  const word = (count: number) => (count === 1 ? noun[0] : noun[1]);
+  const allOnPage = pageIds.length > 0 && n === pageIds.length;
+
+  const close = () => {
+    if (busy) return;
+    setConfirming(null);
+    setTyped("");
+    setError("");
+  };
+  const run = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      if (confirming === "all") {
+        await deleteAll();
+        onDeleted("all");
+      } else {
+        const ids = selection.selected;
+        await deleteSelected(ids);
+        onDeleted(ids);
+      }
+      selection.clear();
+      setBusy(false);
+      setConfirming(null);
+      setTyped("");
+    } catch (e) {
+      setBusy(false);
+      setError(e instanceof Error ? e.message : "Couldn't delete. Please try again.");
+    }
+  };
+
+  const count = confirming === "all" ? total : n;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 bg-slate-50/70 px-4 py-2">
+      <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-600">
+        <Checkbox
+          checked={allOnPage}
+          indeterminate={n > 0 && !allOnPage}
+          disabled={pageIds.length === 0}
+          onChange={(on) => selection.setAll(on)}
+          label={allOnPage ? "Untick all on this page" : "Tick all on this page"}
+        />
+        {n > 0 ? <span className="font-semibold text-neutral-950">{n} selected</span> : "Select"}
+      </label>
+      {n > 0 && (
+        <>
+          <Button size="sm" variant="danger" onClick={() => setConfirming("selected")}>
+            <Icon d={ICON.trash} className="size-3.5" />
+            Delete selected
+          </Button>
+          <button type="button" onClick={selection.clear} className="cursor-pointer text-xs font-semibold text-slate-500 hover:text-neutral-950">
+            Clear
+          </button>
+        </>
+      )}
+      <button
+        type="button"
+        disabled={total === 0}
+        onClick={() => setConfirming("all")}
+        className="ml-auto cursor-pointer text-xs font-semibold text-red-700 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 disabled:no-underline"
+      >
+        Delete all {total > 0 ? total : ""}
+      </button>
+
+      {confirming && (
+        <Modal
+          title={confirming === "all" ? `Delete all ${word(2)}?` : `Delete ${count} ${word(count)}?`}
+          onClose={close}
+          footer={
+            <>
+              <Button onClick={close} disabled={busy}>
+                Cancel
+              </Button>
+              <Button
+                variant="dangerSolid"
+                onClick={run}
+                disabled={busy || (confirming === "all" && typed.trim().toUpperCase() !== "DELETE")}
+              >
+                {busy ? "Deleting…" : `Delete ${count} ${word(count)}`}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3 text-sm leading-relaxed text-neutral-800">
+            {confirming === "all" ? (
+              <p>
+                This permanently deletes <b>all {total} {word(total)}</b> in <b>{scope}</b>, including the ones on other pages.
+              </p>
+            ) : (
+              <p>
+                This permanently deletes the {count} {word(count)} you ticked.
+              </p>
+            )}
+            <p className="text-slate-500">This can&apos;t be undone.</p>
+            {confirming === "all" && (
+              <label className="block">
+                <span className="mb-1.5 block font-semibold text-neutral-900">Type DELETE to confirm</span>
+                <input
+                  autoFocus
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && typed.trim().toUpperCase() === "DELETE" && !busy && run()}
+                  className={`h-10 ${inputClass}`}
+                  aria-label="Type DELETE to confirm"
+                />
+              </label>
+            )}
+            {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-red-700">{error}</p>}
+          </div>
+        </Modal>
+      )}
+    </div>
   );
 }
 

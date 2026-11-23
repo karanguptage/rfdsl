@@ -32,6 +32,9 @@ NEW_COLUMNS = [
     ("is_new", "TINYINT(1) NOT NULL DEFAULT 0 AFTER `is_popular`"),
     ("is_on_sale", "TINYINT(1) NOT NULL DEFAULT 0 AFTER `is_new`"),
     ("sale_label", "VARCHAR(40) NULL AFTER `is_on_sale`"),
+    ("home_popular", "TINYINT(1) NOT NULL DEFAULT 0 AFTER `sale_label`"),
+    ("home_new", "TINYINT(1) NOT NULL DEFAULT 0 AFTER `home_popular`"),
+    ("home_sale", "TINYINT(1) NOT NULL DEFAULT 0 AFTER `home_new`"),
 ]
 
 
@@ -52,9 +55,24 @@ def migrate(cur) -> None:
             HOME_CAROUSEL_SLUGS,
         )
         print(f"Added popular / new / sale columns; marked {cur.rowcount} former home page products as popular.")
+    if "home_popular" in added:
+        # Badges and home page sections used to be one switch: keep every
+        # product's home page sections as they were.
+        cur.execute("UPDATE products SET home_popular=is_popular, home_new=is_new, home_sale=is_on_sale")
+        print(f"Added home page section columns; copied the current badges into them ({cur.rowcount} products).")
+    # A home page section only lists products with its badge: clear stray switches.
+    cur.execute(
+        "UPDATE products SET home_popular=home_popular AND is_popular, "
+        "home_new=home_new AND is_new, home_sale=home_sale AND is_on_sale"
+    )
+    if cur.rowcount:
+        print(f"Cleared home page section switches without a badge on {cur.rowcount} products.")
     cur.execute("SHOW INDEX FROM products WHERE Key_name='ix_products_flags'")
     if not cur.fetchall():
         cur.execute("ALTER TABLE products ADD KEY `ix_products_flags` (`is_published`, `is_popular`, `is_new`, `is_on_sale`)")
+    cur.execute("SHOW INDEX FROM products WHERE Key_name='ix_products_home'")
+    if not cur.fetchall():
+        cur.execute("ALTER TABLE products ADD KEY `ix_products_home` (`is_published`, `home_popular`, `home_new`, `home_sale`)")
 
 
 CHAT_COLUMNS = [

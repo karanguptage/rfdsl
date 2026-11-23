@@ -5,12 +5,13 @@ import { useCallback, useEffect, useState } from "react";
 import { RichText } from "@/components/NemanjaChat";
 import { isRemoteImage } from "@/lib/catalog";
 import { adminApi, ApiError, type AiTestResult, type ChatDetail, type ChatList, type ChatStatus, type KnowledgeNote, type NemanjaStatus } from "./api";
-import { AutoTextarea, Button, Icon, ICON, TextInput } from "./ui";
+import { AutoTextarea, BulkBar, Button, Checkbox, Icon, ICON, TextInput, useSelection } from "./ui";
 
 // Nemanja (AI consultant) administration:
 // - Conversations: chats handed to a person land in "Needs reply"; staff read
 //   the transcript, reply (optionally by email too), take over, hand back to
-//   Nemanja or close.
+//   Nemanja, close or delete. Tick rows to delete several, or delete all in
+//   the current filter.
 // - Knowledge notes: facts Nemanja found on manufacturer sites; only approved
 //   notes are given back to Nemanja as product knowledge.
 // - Setup: whether Nemanja is configured, model, budget, allowed web sites.
@@ -84,6 +85,7 @@ export default function NemanjaAdmin({ selectedId, onSelect, onCountsChange }: {
 
 function Conversations({ selectedId, onSelect, onCountsChange }: { selectedId: number | null; onSelect: (id: number | null) => void; onCountsChange: () => void }) {
   const [filter, setFilter] = useState("needs_reply");
+  const [page, setPage] = useState(1);
   const [list, setList] = useState<ChatList | null>(null);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
@@ -92,7 +94,7 @@ function Conversations({ selectedId, onSelect, onCountsChange }: { selectedId: n
     let cancelled = false;
     const load = () =>
       adminApi
-        .chats(filter)
+        .chats(filter, page)
         .then((d) => !cancelled && (setList(d), setError("")))
         .catch((e) => !cancelled && setError(e.message));
     load();
@@ -101,12 +103,16 @@ function Conversations({ selectedId, onSelect, onCountsChange }: { selectedId: n
       cancelled = true;
       clearInterval(t);
     };
-  }, [filter, reload]);
+  }, [filter, page, reload]);
 
   const refresh = useCallback(() => {
     setReload((n) => n + 1);
     onCountsChange();
   }, [onCountsChange]);
+
+  const pageIds = list?.items.map((c) => c.id) ?? [];
+  const selection = useSelection(pageIds, `${filter}|${list?.page ?? page}`);
+  const filterLabel = (value: string) => ({ needs_reply: "Needs reply", ai: "With Nemanja", human: "Staff", closed: "Closed" })[value] ?? "All";
 
   const filters = [
     ["needs_reply", "Needs reply"],
@@ -125,7 +131,10 @@ function Conversations({ selectedId, onSelect, onCountsChange }: { selectedId: n
             <button
               key={value}
               type="button"
-              onClick={() => setFilter(value)}
+              onClick={() => {
+                setFilter(value);
+                setPage(1);
+              }}
               className={`h-8 cursor-pointer rounded-full px-3 text-sm font-semibold transition-colors ${
                 filter === value ? "bg-slate-200 text-neutral-950" : "text-slate-600 hover:bg-slate-100"
               }`}
@@ -140,16 +149,35 @@ function Conversations({ selectedId, onSelect, onCountsChange }: { selectedId: n
       <div className="mt-4 grid gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] xl:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
         <div className={selectedId !== null ? "max-lg:hidden" : ""}>
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            {list && (
+              <BulkBar
+                pageIds={pageIds}
+                selection={selection}
+                total={list.total}
+                noun={["conversation", "conversations"]}
+                scope={`“${filterLabel(filter)}”`}
+                deleteSelected={(ids) => adminApi.deleteChats({ ids })}
+                deleteAll={() => adminApi.deleteChats({ all: true, status: filter })}
+                onDeleted={(ids) => {
+                  if (selectedId !== null && (ids === "all" || ids.includes(selectedId))) onSelect(null);
+                  setPage(1);
+                  refresh();
+                }}
+              />
+            )}
             {list?.items.length === 0 && (
               <p className="px-4 py-12 text-center text-sm text-slate-500">{filter === "needs_reply" ? "Nobody is waiting for a person." : "No conversations here."}</p>
             )}
             <ul className="divide-y divide-slate-100">
               {list?.items.map((c) => (
-                <li key={c.id}>
+                <li key={c.id} className={`flex items-stretch transition-colors ${c.id === selectedId ? "bg-slate-100" : selection.has(c.id) ? "bg-sky-50/60" : "hover:bg-slate-50"}`}>
+                  <label className="flex cursor-pointer items-start py-3.5 pr-1 pl-4">
+                    <Checkbox checked={selection.has(c.id)} onChange={() => selection.toggle(c.id)} label={`Select ${c.customer_name || `Visitor #${c.id}`}`} />
+                  </label>
                   <button
                     type="button"
                     onClick={() => onSelect(c.id)}
-                    className={`block w-full cursor-pointer px-4 py-3 text-left transition-colors ${c.id === selectedId ? "bg-slate-100" : "hover:bg-slate-50"}`}
+                    className="block min-w-0 flex-1 cursor-pointer py-3 pr-4 pl-2 text-left"
                   >
                     <span className="flex items-baseline gap-2">
                       {c.unread_staff && <span aria-label="Unread" className="size-2 shrink-0 rounded-full bg-red-600" />}
@@ -166,6 +194,21 @@ function Conversations({ selectedId, onSelect, onCountsChange }: { selectedId: n
               ))}
             </ul>
           </div>
+          {list && list.pages > 1 && (
+            <div className="mt-3 flex items-center justify-between text-sm">
+              <span className="text-slate-500">
+                Page {list.page} of {list.pages}
+              </span>
+              <div className="flex gap-2">
+                <Button size="sm" aria-label="Previous page" disabled={list.page <= 1} onClick={() => setPage(list.page - 1)}>
+                  <Icon d={ICON.left} className="size-3.5" />
+                </Button>
+                <Button size="sm" aria-label="Next page" disabled={list.page >= list.pages} onClick={() => setPage(list.page + 1)}>
+                  <Icon d={ICON.right} className="size-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
         <div className={selectedId === null ? "max-lg:hidden" : ""}>
           {selectedId === null ? (
@@ -173,7 +216,7 @@ function Conversations({ selectedId, onSelect, onCountsChange }: { selectedId: n
               Select a conversation.
             </div>
           ) : (
-            <ChatView key={selectedId} id={selectedId} onBack={() => onSelect(null)} onChanged={refresh} />
+            <ChatView key={selectedId} id={selectedId} onBack={() => onSelect(null)} onChanged={refresh} onDeleted={() => (onSelect(null), refresh())} />
           )}
         </div>
       </div>
@@ -181,7 +224,7 @@ function Conversations({ selectedId, onSelect, onCountsChange }: { selectedId: n
   );
 }
 
-function ChatView({ id, onBack, onChanged }: { id: number; onBack: () => void; onChanged: () => void }) {
+function ChatView({ id, onBack, onChanged, onDeleted }: { id: number; onBack: () => void; onChanged: () => void; onDeleted: () => void }) {
   const [chat, setChat] = useState<ChatDetail | null>(null);
   const [error, setError] = useState("");
   const [text, setText] = useState("");
@@ -331,7 +374,27 @@ function ChatView({ id, onBack, onChanged }: { id: number; onBack: () => void; o
               Reopen
             </Button>
           )}
-          {chat.notes.length > 0 && <span className="ml-auto self-center text-xs text-slate-500">{chat.notes.length} knowledge note(s) from this chat</span>}
+          {chat.notes.length > 0 && <span className="self-center text-xs text-slate-500">{chat.notes.length} knowledge note(s) from this chat</span>}
+          <Button
+            size="sm"
+            variant="danger"
+            className="ml-auto"
+            disabled={busy}
+            onClick={async () => {
+              if (!confirm(`Delete the conversation with ${chat.customer_name || `Visitor #${chat.id}`} permanently? This can't be undone.`)) return;
+              setBusy(true);
+              try {
+                await adminApi.removeChat(chat.id);
+                onDeleted();
+              } catch (e) {
+                setError(e instanceof ApiError ? e.message : "Failed");
+                setBusy(false);
+              }
+            }}
+          >
+            <Icon d={ICON.trash} className="size-3.5" />
+            Delete
+          </Button>
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
       </div>

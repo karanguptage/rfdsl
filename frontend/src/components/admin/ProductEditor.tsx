@@ -19,7 +19,7 @@ const SECTIONS = [
   { id: "highlights", title: "Highlights" },
   { id: "specs", title: "Specifications" },
   { id: "links", title: "Downloads & links" },
-  { id: "featured", title: "Homepage sections" },
+  { id: "featured", title: "Badges & home page" },
   { id: "visibility", title: "Visibility" },
 ];
 
@@ -344,33 +344,48 @@ export default function ProductEditor({
 
           <Section
             id="featured"
-            title="Homepage sections"
-            description="Show this product in the home page sections below. A section only appears on the home page when at least one published product is in it."
+            title="Badges & homepage sections"
+            description="A badge marks the product everywhere on the site. To list it in the matching home page section too, also turn on “Show on home page” (only possible while the badge is on). A section only appears on the home page when at least one published product is listed in it."
           >
             <div className="grid gap-3 md:grid-cols-3">
               <FlagCard
                 title="Popular product"
                 where="“The most popular products”"
                 badge="Popular"
-                badgeClass="border border-slate-200 bg-white text-neutral-800"
-                checked={draft.is_popular}
-                onChange={(v) => update("is_popular", v)}
+                badgeClass="bg-[#0b1f45] text-white"
+                badgeOn={draft.is_popular}
+                onBadge={(v) => {
+                  update("is_popular", v);
+                  if (!v) update("home_popular", false);
+                }}
+                homeOn={draft.home_popular}
+                onHome={(v) => update("home_popular", v)}
               />
               <FlagCard
                 title="New arrival"
                 where="“New arrivals”"
                 badge="New"
-                badgeClass="bg-neutral-950 text-white"
-                checked={draft.is_new}
-                onChange={(v) => update("is_new", v)}
+                badgeClass="bg-[#6e0303] text-white"
+                badgeOn={draft.is_new}
+                onBadge={(v) => {
+                  update("is_new", v);
+                  if (!v) update("home_new", false);
+                }}
+                homeOn={draft.home_new}
+                onHome={(v) => update("home_new", v)}
               />
               <FlagCard
                 title="On sale"
                 where="“Special offers”"
                 badge={draft.sale_label.trim() || "Sale"}
-                badgeClass="bg-red-600 text-white"
-                checked={draft.is_on_sale}
-                onChange={(v) => update("is_on_sale", v)}
+                badgeClass="bg-[#651803] text-white"
+                badgeOn={draft.is_on_sale}
+                onBadge={(v) => {
+                  update("is_on_sale", v);
+                  if (!v) update("home_sale", false);
+                }}
+                homeOn={draft.home_sale}
+                onHome={(v) => update("home_sale", v)}
               >
                 {draft.is_on_sale && (
                   <label className="mt-3 block">
@@ -386,7 +401,8 @@ export default function ProductEditor({
                 )}
               </FlagCard>
             </div>
-            {!draft.is_published && (draft.is_popular || draft.is_new || draft.is_on_sale) && (
+            {!draft.is_published &&
+              ((draft.is_popular && draft.home_popular) || (draft.is_new && draft.home_new) || (draft.is_on_sale && draft.home_sale)) && (
               <p className="text-sm text-amber-700">This product is hidden, so it won&apos;t appear in these sections until it&apos;s published.</p>
             )}
           </Section>
@@ -450,29 +466,43 @@ function FlagCard({
   where,
   badge,
   badgeClass,
-  checked,
-  onChange,
+  badgeOn,
+  onBadge,
+  homeOn,
+  onHome,
   children,
 }: {
   title: string;
   where: string;
   badge: string;
   badgeClass: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  children?: React.ReactNode;
+  badgeOn: boolean;
+  onBadge: (v: boolean) => void;
+  homeOn: boolean;
+  onHome: (v: boolean) => void;
+  children?: React.ReactNode; // extra fields shown while the badge is on (e.g. sale text)
 }) {
   return (
-    <div className={`rounded-lg border p-4 transition-colors ${checked ? "border-neutral-950 bg-slate-50" : "border-slate-200"}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-semibold text-neutral-950">{title}</p>
-          <p className="mt-0.5 text-xs text-slate-500">Home page: {where}</p>
-          <span className={`mt-2 inline-block rounded-full px-2.5 py-1 text-[11px] leading-none font-bold tracking-wide ${badgeClass}`}>{badge}</span>
+    <div className={`rounded-lg border p-4 transition-colors ${badgeOn ? "border-neutral-950 bg-slate-50" : "border-slate-200"}`}>
+      <p className="font-semibold text-neutral-950">{title}</p>
+      {/* The badge on the product, then (only while it's on) the home page section. */}
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-neutral-900">Show badge</p>
+          <span className={`mt-1 inline-block rounded-full px-2.5 py-1 text-[11px] leading-none font-bold tracking-wide ${badgeClass} ${badgeOn ? "" : "opacity-40"}`}>
+            {badge}
+          </span>
         </div>
-        <Toggle checked={checked} onChange={onChange} label={title} />
+        <Toggle checked={badgeOn} onChange={onBadge} label={`${title}: show badge`} />
       </div>
       {children}
+      <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
+        <div className={`min-w-0 ${badgeOn ? "" : "opacity-50"}`}>
+          <p className="text-sm font-medium text-neutral-900">Show on home page</p>
+          <p className="mt-0.5 text-xs text-slate-500">{badgeOn ? `In ${where}` : "Turn on the badge first"}</p>
+        </div>
+        <Toggle checked={badgeOn && homeOn} onChange={onHome} disabled={!badgeOn} label={`${title}: show on home page`} />
+      </div>
     </div>
   );
 }

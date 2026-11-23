@@ -5,8 +5,8 @@ import { categoryOf, isRemoteImage, type ProductSummary } from "@/lib/catalog";
 
 // One product in the Products list, in the same frame as the home page
 // carousel panels: 1px slate border with a 1px white gap, square photo on
-// white (never cropped), then a white name strip (black text) under a
-// hairline. No hover effect; keyboard focus shows a ring.
+// white (never cropped), then a light grey name strip (black text). No hover
+// effect; keyboard focus shows a ring.
 export default function ProductPanel({ product, priority = false }: { product: ProductSummary; priority?: boolean }) {
   const category = categoryOf(product.category);
   const chip = product.subcategory || category?.label;
@@ -35,18 +35,19 @@ export default function ProductPanel({ product, priority = false }: { product: P
             <span
               className={`absolute top-3 left-3 z-[1] truncate rounded-full ${
                 product.is_popular || product.is_new || product.is_on_sale ? "max-w-[42%]" : "max-w-[calc(100%-1.5rem)]"
-              } border border-slate-200 bg-white/90 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-slate-600 backdrop-blur-sm`}
+              } inline-flex items-center gap-1.5 border border-zinc-500 bg-white px-2.5 py-1 text-[11px] font-semibold tracking-wide text-zinc-700`}
             >
-              {chip}
+              <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-zinc-600" />
+              <span className="min-w-0 truncate">{chip}</span>
             </span>
           )}
           <ProductBadges product={product} className="absolute top-3 right-3 z-[1] max-w-[55%] justify-end" />
         </div>
-        <div className="mt-auto border-t border-slate-200 bg-white px-3 py-3 text-center lg:py-3.5">
-          <p className="truncate text-[15px] font-semibold tracking-tight text-neutral-950 lg:text-base">
+        <div className="mt-auto bg-[#f2f2f2] px-3 py-3 text-center lg:py-3.5">
+          <p className="truncate text-[15px] font-semibold tracking-tight text-black lg:text-base">
             {product.name}
           </p>
-          <p className="mt-0.5 truncate text-xs text-slate-500">{meta || category?.label}</p>
+          <p className="mt-0.5 truncate text-xs text-black/75">{meta || category?.label}</p>
         </div>
       </div>
     </Link>

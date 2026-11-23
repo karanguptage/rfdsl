@@ -12,7 +12,7 @@ JSON_FIELDS = ("gallery", "highlights", "specs", "links")
 
 LIST_COLUMNS = (
     "id, slug, name, model, brand, product_type, category, subcategory, frequency, "
-    "tagline, summary, image, is_published, is_popular, is_new, is_on_sale, sale_label, sort_order, updated_at"
+    "tagline, summary, image, is_published, is_popular, is_new, is_on_sale, sale_label, home_popular, home_new, home_sale, sort_order, updated_at"
 )
 
 
@@ -61,7 +61,7 @@ def _decode(row: dict) -> dict:
     for f in ("created_at", "updated_at"):
         if row.get(f) is not None:
             row[f] = row[f].isoformat()
-    for flag in ("is_published", "is_popular", "is_new", "is_on_sale"):
+    for flag in ("is_published", "is_popular", "is_new", "is_on_sale", "home_popular", "home_new", "home_sale"):
         if flag in row:
             row[flag] = bool(row[flag])
     return row
@@ -178,12 +178,19 @@ def related_products(cur, product: dict, limit: int = 4) -> list[dict]:
     return [_decode(r) for r in cur.fetchall()]
 
 
+# Each badge and the home page section that may list it. A section lists only
+# products that have the badge AND its home_* switch on; a badge alone doesn't
+# put a product on the home page.
+HOME_FOR_BADGE = {"is_popular": "home_popular", "is_new": "home_new", "is_on_sale": "home_sale"}
+
+
 def featured(cur, limit: int = 24) -> dict:
     """Published products for the three home page sections (empty lists hide them)."""
     out = {}
-    for key, column in (("popular", "is_popular"), ("new", "is_new"), ("sale", "is_on_sale")):
+    for key, badge in (("popular", "is_popular"), ("new", "is_new"), ("sale", "is_on_sale")):
+        home = HOME_FOR_BADGE[badge]
         cur.execute(
-            f"SELECT {LIST_COLUMNS} FROM products WHERE is_published=1 AND {column}=1 ORDER BY sort_order, name LIMIT %s",
+            f"SELECT {LIST_COLUMNS} FROM products WHERE is_published=1 AND {badge}=1 AND {home}=1 ORDER BY sort_order, name LIMIT %s",
             (limit,),
         )
         out[key] = [_decode(r) for r in cur.fetchall()]
@@ -224,6 +231,10 @@ def save_product(cur, data: ProductIn, product_id: int | None = None) -> int:
         "is_new": int(data.is_new),
         "is_on_sale": int(data.is_on_sale),
         "sale_label": (data.sale_label or None) if data.is_on_sale else None,
+        # Home page sections need the matching badge (see HOME_FOR_BADGE).
+        "home_popular": int(data.is_popular and data.home_popular),
+        "home_new": int(data.is_new and data.home_new),
+        "home_sale": int(data.is_on_sale and data.home_sale),
         "sort_order": data.sort_order,
         "search_text": build_search_text(data),
     }

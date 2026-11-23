@@ -19,6 +19,11 @@ export type Product = {
 // show the same products twice side by side); the panels simply sit in a row.
 const STATIC_MAX = 4;
 
+// Colours of the name strip and the hover tint over the photo. Each home page
+// section passes its own (matching its badge); full class names so Tailwind sees them.
+export type PanelTone = { strip: string; tint: string };
+const DEFAULT_TONE: PanelTone = { strip: "bg-[#0b1f45]", tint: "bg-[#0b1f45]/50" };
+
 const STEP_EVERY_MS = 3000; // time between automatic moves
 const SLIDE_MS = 700; // duration of each move
 const DRAG_START_PX = 6; // pointer movement before a press counts as a drag (shorter = a click)
@@ -31,7 +36,7 @@ const FLICK_PX = 40; // a drag shorter than one panel but longer than this still
 //   release it settles on the nearest panel. Vertical swipes still scroll the page.
 // - Each panel links to its product page: a click or tap opens it, while a
 //   drag or swipe only moves the row. Hovering (or keyboard focus) fades in a
-//   navy tint over the image and types the description out once, exactly like
+//   tint (in the section colour) over the image and types the description out once, exactly like
 //   the industry images above.
 // - The round arrow buttons on the left and right (and the arrow keys when
 //   it has keyboard focus) move it one panel at a time; tabbing to a
@@ -39,7 +44,15 @@ const FLICK_PX = 40; // a drag shorter than one panel but longer than this still
 // - It pauses while hovered by a mouse, while it has keyboard focus, while
 //   dragging and while the tab is hidden, and never moves on its own for
 //   visitors who prefer reduced motion.
-export default function ProductCarousel({ products, className }: { products: Product[]; className?: string }) {
+export default function ProductCarousel({
+  products,
+  className,
+  tone = DEFAULT_TONE,
+}: {
+  products: Product[];
+  className?: string;
+  tone?: PanelTone;
+}) {
   const count = products.length;
   // The products are rendered three times in a row and the view stays within
   // the middle copy, so there is always content on both sides while moving or
@@ -178,7 +191,7 @@ export default function ProductCarousel({ products, className }: { products: Pro
     e.preventDefault();
   };
 
-  if (count <= STATIC_MAX) return <StaticRow products={products} className={className} />;
+  if (count <= STATIC_MAX) return <StaticRow products={products} className={className} tone={tone} />;
 
   return (
     <div
@@ -262,7 +275,7 @@ export default function ProductCarousel({ products, className }: { products: Pro
                     <div className="@container relative aspect-square">
                       <PanelImage product={product} alt={isCopy ? "" : product.name} />
                       {/*
-                        Description, as on the industry images: a navy tint fades
+                        Description: a tint in the section colour fades
                         in over the photo and the text types out once per hover,
                         centered in white. Text size and padding scale with the
                         panel width. Screen readers get the full text straight away.
@@ -271,7 +284,7 @@ export default function ProductCarousel({ products, className }: { products: Pro
                         <>
                           <span
                             aria-hidden="true"
-                            className={`absolute inset-0 bg-[#0b1f45]/85 transition-opacity duration-300 ${
+                            className={`absolute inset-0 ${tone.tint} transition-opacity duration-300 ${
                               isActive ? "opacity-100" : "opacity-0"
                             }`}
                           />
@@ -284,8 +297,8 @@ export default function ProductCarousel({ products, className }: { products: Pro
                         </>
                       )}
                     </div>
-                    {/* Name strip: black background, white text. */}
-                    <p className="bg-black px-3 py-3 text-center text-[15px] font-semibold tracking-tight text-white lg:py-4 lg:text-base">
+                    {/* Name strip in the section colour, white text. */}
+                    <p className={`${tone.strip} px-3 py-3 text-center text-[15px] font-semibold tracking-tight text-white lg:py-4 lg:text-base`}>
                       {product.name}
                     </p>
                   </div>
@@ -361,9 +374,9 @@ function PanelImage({ product, alt }: { product: Product; alt: string }) {
   );
 }
 
-// A few products: the same panels (frame, photo, hover description, black
+// A few products: the same panels (frame, photo, hover description, coloured
 // name strip) in a still row that wraps like the carousel's panel count.
-function StaticRow({ products, className }: { products: Product[]; className?: string }) {
+function StaticRow({ products, className, tone }: { products: Product[]; className?: string; tone: PanelTone }) {
   const [active, setActive] = useState<number | null>(null);
   const [activation, setActivation] = useState(0);
   const baseId = useId();
@@ -396,7 +409,7 @@ function StaticRow({ products, className }: { products: Product[]; className?: s
                     <>
                       <span
                         aria-hidden="true"
-                        className={`absolute inset-0 bg-[#0b1f45]/85 transition-opacity duration-300 ${active === i ? "opacity-100" : "opacity-0"}`}
+                        className={`absolute inset-0 ${tone.tint} transition-opacity duration-300 ${active === i ? "opacity-100" : "opacity-0"}`}
                       />
                       <span className="absolute inset-0 flex items-center justify-center p-[clamp(10px,7cqw,28px)] text-center text-[clamp(12px,4.6cqw,16px)] leading-[1.45] text-white/95">
                         {active === i && <TypingText key={activation} text={product.description} />}
@@ -407,7 +420,7 @@ function StaticRow({ products, className }: { products: Product[]; className?: s
                     </>
                   )}
                 </div>
-                <p className="bg-black px-3 py-3 text-center text-[15px] font-semibold tracking-tight text-white lg:py-4 lg:text-base">{product.name}</p>
+                <p className={`${tone.strip} px-3 py-3 text-center text-[15px] font-semibold tracking-tight text-white lg:py-4 lg:text-base`}>{product.name}</p>
               </div>
             </Link>
           </li>

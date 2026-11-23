@@ -48,10 +48,13 @@ CREATE TABLE IF NOT EXISTS `products` (
   `links`         JSON NULL,
   `keywords`      VARCHAR(600) NULL,                     -- extra search words not shown on the page
   `is_published`  TINYINT(1) NOT NULL DEFAULT 1,
-  `is_popular`    TINYINT(1) NOT NULL DEFAULT 0,         -- home page "The most popular products"
-  `is_new`        TINYINT(1) NOT NULL DEFAULT 0,         -- home page "New arrivals"
-  `is_on_sale`    TINYINT(1) NOT NULL DEFAULT 0,         -- home page "Special offers"
+  `is_popular`    TINYINT(1) NOT NULL DEFAULT 0,         -- "Popular" badge
+  `is_new`        TINYINT(1) NOT NULL DEFAULT 0,         -- "New" badge
+  `is_on_sale`    TINYINT(1) NOT NULL DEFAULT 0,         -- "Sale" badge
   `sale_label`    VARCHAR(40) NULL,                      -- optional badge text, e.g. "20% off"
+  `home_popular`  TINYINT(1) NOT NULL DEFAULT 0,         -- listed in home page "The most popular products"
+  `home_new`      TINYINT(1) NOT NULL DEFAULT 0,         -- listed in home page "New arrivals"
+  `home_sale`     TINYINT(1) NOT NULL DEFAULT 0,         -- listed in home page "Special offers"
   `sort_order`    INT NOT NULL DEFAULT 0,                -- lower first; ties by name
   `search_text`   MEDIUMTEXT NULL,
   `created_at`    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -63,6 +66,7 @@ CREATE TABLE IF NOT EXISTS `products` (
   KEY `ix_products_sub` (`category`, `subcategory`),
   KEY `ix_products_brand` (`brand`),
   KEY `ix_products_flags` (`is_published`, `is_popular`, `is_new`, `is_on_sale`),
+  KEY `ix_products_home` (`is_published`, `home_popular`, `home_new`, `home_sale`),
   FULLTEXT KEY `ft_products_search` (`search_text`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

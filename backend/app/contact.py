@@ -127,7 +127,8 @@ def get(cur, message_id: int, with_replies: bool = False) -> dict | None:
     return row
 
 
-def list_messages(cur, *, status: str = "", q: str = "", page: int = 1, per_page: int = 20) -> dict:
+def _filter(status: str, q: str) -> tuple[str, list]:
+    """WHERE clause for the admin list's folder + search."""
     where, args = [], []
     if status == "inbox":  # everything not archived
         where.append("status<>'archived'")
@@ -138,7 +139,24 @@ def list_messages(cur, *, status: str = "", q: str = "", page: int = 1, per_page
         like = "%" + token.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         where.append("CONCAT_WS(' ', first_name, last_name, email, phone, company, message) LIKE %s")
         args.append(like)
-    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    return (" WHERE " + " AND ".join(where)) if where else "", args
+
+
+def delete_messages(cur, ids: list[int] | None = None, status: str = "", q: str = "") -> int:
+    """Deletes the given messages, or (ids None) every message in the folder +
+    search. Returns how many were deleted."""
+    if ids is not None:
+        if not ids:
+            return 0
+        cur.execute(f"DELETE FROM contact_messages WHERE id IN ({','.join(['%s'] * len(ids))})", ids)
+    else:
+        where_sql, args = _filter(status, q)
+        cur.execute("DELETE FROM contact_messages" + where_sql, args)
+    return cur.rowcount
+
+
+def list_messages(cur, *, status: str = "", q: str = "", page: int = 1, per_page: int = 20) -> dict:
+    where_sql, args = _filter(status, q)
 
     cur.execute("SELECT COUNT(*) n FROM contact_messages" + where_sql, args)
     total = cur.fetchone()["n"]

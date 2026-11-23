@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { isTrackingExcluded, setTrackingExcluded } from "@/lib/tracking";
 import { adminApi, type VisitorDetail, type VisitorList, type VisitorStats } from "./api";
-import { Button, Icon, ICON, inputClass, Toggle } from "./ui";
+import { BulkBar, Button, Checkbox, Icon, ICON, inputClass, Toggle, useSelection } from "./ui";
 
 // Visitor tracking: summary for a chosen period, the visitor list (one row
 // per IP address) and, for a selected visitor, every page they viewed in
@@ -48,6 +48,7 @@ function Overview({ days, setDays, onSelect }: { days: number; setDays: (d: numb
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [page, setPage] = useState(1);
+  const [reload, setReload] = useState(0);
   const [excluded, setExcluded] = useState(isTrackingExcluded);
 
   useEffect(() => {
@@ -60,7 +61,7 @@ function Overview({ days, setDays, onSelect }: { days: number; setDays: (d: numb
 
   // Every figure below follows the period filter. While a new period loads,
   // the previous figures stay on screen, dimmed.
-  const requestKey = `${days}|${debouncedQ}|${page}`;
+  const requestKey = `${days}|${debouncedQ}|${page}|${reload}`;
   const loading = loadedKey !== requestKey;
   useEffect(() => {
     let cancelled = false;
@@ -72,13 +73,16 @@ function Overview({ days, setDays, onSelect }: { days: number; setDays: (d: numb
         setError("");
       })
       .catch((e) => !cancelled && setError(e.message))
-      .finally(() => !cancelled && setLoadedKey(`${days}|${debouncedQ}|${page}`));
+      .finally(() => !cancelled && setLoadedKey(`${days}|${debouncedQ}|${page}|${reload}`));
     return () => {
       cancelled = true;
     };
-  }, [days, debouncedQ, page]);
+  }, [days, debouncedQ, page, reload]);
 
   const periodLabel = PERIODS.find((p) => p.days === days)?.label.toLowerCase() ?? "";
+  const pageIds = list?.items.map((v) => v.id) ?? [];
+  const selection = useSelection(pageIds, `${days}|${debouncedQ}|${list?.page ?? page}`);
+  const scope = `${days === 0 ? "all time" : periodLabel === "today" ? "today" : `the last ${periodLabel}`}${debouncedQ ? ` with an IP starting “${debouncedQ}”` : ""}`;
 
   return (
     <div className="px-4 py-6 lg:px-6 lg:py-8">
@@ -175,7 +179,22 @@ function Overview({ days, setDays, onSelect }: { days: number; setDays: (d: numb
         </div>
 
         <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <div className="hidden grid-cols-[minmax(0,1.1fr)_minmax(0,1.2fr)_6rem_6rem_minmax(0,1.6fr)_9.5rem] gap-4 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-[11px] font-semibold tracking-wider text-slate-500 uppercase lg:grid">
+          {list && (
+            <BulkBar
+              pageIds={pageIds}
+              selection={selection}
+              total={list.total}
+              noun={["visitor", "visitors"]}
+              scope={`${scope} (with all their visits and page views)`}
+              deleteSelected={(ids) => adminApi.deleteVisitors({ ids })}
+              deleteAll={() => adminApi.deleteVisitors({ all: true, days, q: debouncedQ })}
+              onDeleted={() => {
+                setPage(1);
+                setReload((n) => n + 1);
+              }}
+            />
+          )}
+          <div className="hidden grid-cols-[minmax(0,1.1fr)_minmax(0,1.2fr)_6rem_6rem_minmax(0,1.6fr)_9.5rem] gap-4 border-b border-slate-200 bg-slate-50 py-2.5 pr-4 pl-11 text-[11px] font-semibold tracking-wider text-slate-500 uppercase lg:grid">
             <span>IP address</span>
             <span>Device</span>
             <span className="text-right">Visits</span>
@@ -186,11 +205,14 @@ function Overview({ days, setDays, onSelect }: { days: number; setDays: (d: numb
           {list?.items.length === 0 && <p className="px-4 py-12 text-center text-sm text-slate-500">No visitors {debouncedQ ? "match that IP address" : "in this period yet"}.</p>}
           <ul className="divide-y divide-slate-100">
             {list?.items.map((v) => (
-              <li key={v.id}>
+              <li key={v.id} className={`flex items-stretch transition-colors ${selection.has(v.id) ? "bg-sky-50/60" : "hover:bg-slate-50"}`}>
+                <label className="flex cursor-pointer items-start py-3.5 pr-1 pl-4 lg:items-center lg:py-0">
+                  <Checkbox checked={selection.has(v.id)} onChange={() => selection.toggle(v.id)} label={`Select ${v.ip}`} />
+                </label>
                 <button
                   type="button"
                   onClick={() => onSelect(v.id)}
-                  className="grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3 text-left text-sm transition-colors outline-none hover:bg-slate-50 focus-visible:bg-slate-50 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.2fr)_6rem_6rem_minmax(0,1.6fr)_9.5rem]"
+                  className="grid min-w-0 flex-1 cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 py-3 pr-4 pl-2 text-left text-sm outline-none focus-visible:bg-slate-50 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.2fr)_6rem_6rem_minmax(0,1.6fr)_9.5rem]"
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     <span className="truncate font-semibold text-neutral-950 tabular-nums">{v.ip}</span>

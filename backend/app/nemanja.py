@@ -248,13 +248,23 @@ def _now() -> datetime:
     return datetime.now().replace(microsecond=0)
 
 
+# Nemanja's first message in every chat, word for word (set by RF Data Systems).
+# Fixed text, saved when the chat starts: no AI call until the visitor writes.
+GREETING = (
+    "Hello, this is Nemanja from RF DATA. We provide specific solutions related to asset tracking. "
+    "Could you please let us know what type of asset you would like to track?"
+)
+
+
 def start_conversation(cur, ip: str, page: str) -> dict:
     token = secrets.token_urlsafe(32)[:43]
     cur.execute(
         "INSERT INTO chat_conversations (token, visitor_ip, page) VALUES (%s, %s, %s)",
         (token, ip[:45], page[:300] or None),
     )
-    return {"id": cur.lastrowid, "token": token}
+    conv_id = cur.lastrowid
+    add_message(cur, conv_id, "assistant", GREETING)
+    return {"id": conv_id, "token": token}
 
 
 def get_conversation(cur, conv_id: int, token: str | None = None) -> dict | None:
@@ -338,17 +348,26 @@ _ip_hits: dict[str, list[float]] = {}
 _ip_lock = threading.Lock()
 
 
-def allow_message(ip: str) -> bool:
-    """At most 30 visitor messages per IP per 10 minutes."""
+def _allow(key: str, limit: int, window_s: int = 600) -> bool:
     now = time.time()
     with _ip_lock:
-        hits = [t for t in _ip_hits.get(ip, []) if now - t < 600]
-        if len(hits) >= 30:
-            _ip_hits[ip] = hits
+        hits = [t for t in _ip_hits.get(key, []) if now - t < window_s]
+        if len(hits) >= limit:
+            _ip_hits[key] = hits
             return False
         hits.append(now)
-        _ip_hits[ip] = hits
+        _ip_hits[key] = hits
         return True
+
+
+def allow_message(ip: str) -> bool:
+    """At most 30 visitor messages per IP per 10 minutes."""
+    return _allow(f"msg:{ip}", 30)
+
+
+def allow_start(ip: str) -> bool:
+    """At most 20 new chats per IP per 10 minutes (a chat starts on every first visit)."""
+    return _allow(f"start:{ip}", 20)
 
 
 def post_visitor_message(conv_id: int, text: str) -> None:
@@ -422,7 +441,10 @@ def _worker(conv_id: int) -> None:
             _set(conv_id, busy_since=_now(), activity="Thinking")
             _run_turn(conv_id)
     except Exception as e:  # noqa: BLE001 - never leave the visitor without an answer
-        _fail(conv_id, f"AI error: {type(e).__name__}: {e}")
+        try:
+            _fail(conv_id, f"AI error: {type(e).__name__}: {e}")
+        except Exception:  # noqa: BLE001 - e.g. staff deleted the chat mid-reply
+            print(f"[nemanja] chat {conv_id}: {type(e).__name__}: {e} (and the hand-off failed too)")
     finally:
         with _running_lock:
             _running.discard(conv_id)
@@ -486,6 +508,15 @@ def _run_turn(conv_id: int) -> None:
         # First successful turn? (Nemanja hasn't answered anything yet.)
         first_turn = conv["ai_last_msg_id"] == 0
         overview = catalogue_overview(cur) if first_turn else None
+        greeting = []
+        if first_turn:
+            # Nemanja's opening message (the fixed GREETING, saved when the chat
+            # started), so the history shows the question the visitor answers.
+            cur.execute(
+                "SELECT content FROM chat_messages WHERE conversation_id=%s AND role='assistant' AND id<%s ORDER BY id",
+                (conv_id, new[0]["id"]),
+            )
+            greeting = [g["content"] for g in cur.fetchall()]
         staff_context = conv["staff_context"]
 
     c = client()
@@ -498,6 +529,8 @@ def _run_turn(conv_id: int) -> None:
     if overview:
         # Developer messages stay in the conversation's history for later turns.
         items.append({"role": "developer", "content": overview})
+    for g in greeting:
+        items.append({"role": "assistant", "content": g})
     if staff_context:
         items.append({
             "role": "developer",
@@ -792,14 +825,59 @@ def set_status(conv_id: int, status: str) -> None:
             add_message(cur, conv_id, "notice", "This conversation has been closed. Thank you for contacting RF Data Systems.")
 
 
-def list_conversations(cur, status: str = "", page: int = 1, per_page: int = 25) -> dict:
+def _chat_filter(status: str) -> tuple[str, list]:
+    """WHERE clause (alias c) for the admin list filters. Chats where the
+    visitor never wrote (just Nemanja's greeting) are never listed."""
     where, args = ["EXISTS (SELECT 1 FROM chat_messages m WHERE m.conversation_id=c.id AND m.role='visitor')"], []
     if status == "needs_reply":
         where.append("(c.status='waiting_human' OR (c.status='human' AND c.unread_staff=1))")
     elif status in ("ai", "waiting_human", "human", "closed"):
         where.append("c.status=%s")
         args.append(status)
-    where_sql = " WHERE " + " AND ".join(where)
+    return " WHERE " + " AND ".join(where), args
+
+
+def delete_conversations(cur, ids: list[int] | None = None, status: str | None = None) -> int:
+    """Deletes the given chats, or (ids None) every chat in the admin filter
+    `status`. Messages go with them (FK cascade); knowledge notes found in them
+    are kept, unlinked. Returns how many chats were deleted."""
+    if ids is not None:
+        if not ids:
+            return 0
+        cur.execute(f"SELECT id FROM chat_conversations WHERE id IN ({','.join(['%s'] * len(ids))})", ids)
+    else:
+        where_sql, args = _chat_filter(status or "")
+        cur.execute("SELECT c.id FROM chat_conversations c" + where_sql, args)
+    found = [r["id"] for r in cur.fetchall()]
+    for i in range(0, len(found), 500):
+        chunk = found[i:i + 500]
+        marks = ",".join(["%s"] * len(chunk))
+        cur.execute(f"UPDATE knowledge_notes SET conversation_id=NULL WHERE conversation_id IN ({marks})", chunk)
+        cur.execute(f"DELETE FROM chat_conversations WHERE id IN ({marks})", chunk)
+    return len(found)
+
+
+_last_cleanup = 0.0
+
+
+def cleanup_unused_chats(hours: int = 24) -> None:
+    """A chat starts on every first visit to /solutions; drop the ones where the
+    visitor never wrote, after a day (at most once an hour). A visitor coming
+    back to one just gets a new chat."""
+    global _last_cleanup
+    if time.time() - _last_cleanup < 3600:
+        return
+    _last_cleanup = time.time()
+    with db.cursor() as cur:
+        cur.execute(
+            "DELETE c FROM chat_conversations c WHERE c.last_message_at < NOW() - INTERVAL %s HOUR"
+            " AND NOT EXISTS (SELECT 1 FROM chat_messages m WHERE m.conversation_id=c.id AND m.role IN ('visitor','staff'))",
+            (hours,),
+        )
+
+
+def list_conversations(cur, status: str = "", page: int = 1, per_page: int = 25) -> dict:
+    where_sql, args = _chat_filter(status)
     cur.execute("SELECT COUNT(*) n FROM chat_conversations c" + where_sql, args)
     total = cur.fetchone()["n"]
     pages = max(1, -(-total // per_page))

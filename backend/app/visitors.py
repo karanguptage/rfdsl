@@ -262,7 +262,8 @@ def stats(cur, days: int) -> dict:
     }
 
 
-def list_visitors(cur, *, days: int, q: str = "", page: int = 1, per_page: int = 25) -> dict:
+def _filter(days: int, q: str) -> tuple[str, list]:
+    """WHERE clause (alias v) for the admin list's period + IP search."""
     since = period_start(days)
     where, args = [], []
     if since:
@@ -271,7 +272,24 @@ def list_visitors(cur, *, days: int, q: str = "", page: int = 1, per_page: int =
     if q.strip():
         where.append("v.ip LIKE %s")
         args.append(q.strip().replace("%", "").replace("_", "\\_") + "%")
-    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    return (" WHERE " + " AND ".join(where)) if where else "", args
+
+
+def delete_visitors(cur, ids: list[int] | None = None, days: int = 0, q: str = "") -> int:
+    """Deletes the given visitors with all their tracking data, or (ids None)
+    every visitor in the period + search. Returns how many were deleted."""
+    if ids is not None:
+        if not ids:
+            return 0
+        cur.execute(f"DELETE FROM visitors WHERE id IN ({','.join(['%s'] * len(ids))})", ids)
+    else:
+        where_sql, args = _filter(days, q)
+        cur.execute("DELETE v FROM visitors v" + where_sql, args)
+    return cur.rowcount
+
+
+def list_visitors(cur, *, days: int, q: str = "", page: int = 1, per_page: int = 25) -> dict:
+    where_sql, args = _filter(days, q)
     cur.execute("SELECT COUNT(*) n FROM visitors v" + where_sql, args)
     total = cur.fetchone()["n"]
     pages = max(1, -(-total // per_page))

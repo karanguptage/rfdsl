@@ -96,6 +96,10 @@ class ProductIn(BaseModel):
     is_new: bool = False
     is_on_sale: bool = False
     sale_label: str = Field("", max_length=40)
+    # Home page sections the product is listed in, set separately from the badges above.
+    home_popular: bool = False
+    home_new: bool = False
+    home_sale: bool = False
     sort_order: int = 0
 
     strip_text = field_validator(
@@ -139,6 +143,9 @@ class ProductPatch(BaseModel):
     is_popular: bool | None = None
     is_new: bool | None = None
     is_on_sale: bool | None = None
+    home_popular: bool | None = None
+    home_new: bool | None = None
+    home_sale: bool | None = None
     sort_order: int | None = None
 
 

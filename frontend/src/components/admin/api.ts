@@ -86,7 +86,7 @@ export type UploadResult = { url: string; name: string; kind: "image" | "file"; 
 // What the editor sends (same shape as the backend's ProductIn).
 export type ProductInput = Pick<
   Product,
-  "highlights" | "specs" | "links" | "gallery" | "is_published" | "sort_order" | "category" | "is_popular" | "is_new" | "is_on_sale"
+  "highlights" | "specs" | "links" | "gallery" | "is_published" | "sort_order" | "category" | "is_popular" | "is_new" | "is_on_sale" | "home_popular" | "home_new" | "home_sale"
 > & {
   sale_label: string;
   slug: string;
@@ -267,6 +267,11 @@ export type AiTestResult =
     }
   | { ok: false; error_type: string; status: number | null; code: string | null; message: string; hint: string };
 
+// Bulk delete: the ticked ids, or everything matching the list's filter.
+export type BulkDelete = { ids: number[] } | { all: true; status?: string; q?: string; days?: number };
+const bulkDelete = (path: string, body: BulkDelete) =>
+  request<{ deleted: number }>(path, { method: "POST", body: JSON.stringify(body) });
+
 export const adminApi = {
   login: (password: string) =>
     request<{ token: string; expires: number }>("/login", { method: "POST", body: JSON.stringify({ password }) }),
@@ -279,7 +284,7 @@ export const adminApi = {
   get: (id: number) => request<Product>(`/products/${id}`),
   create: (data: ProductInput) => request<Product>("/products", { method: "POST", body: JSON.stringify(data) }),
   update: (id: number, data: ProductInput) => request<Product>(`/products/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-  patch: (id: number, data: { is_published?: boolean; is_popular?: boolean; is_new?: boolean; is_on_sale?: boolean; sort_order?: number }) =>
+  patch: (id: number, data: { is_published?: boolean; is_popular?: boolean; is_new?: boolean; is_on_sale?: boolean; home_popular?: boolean; home_new?: boolean; home_sale?: boolean; sort_order?: number }) =>
     request<Product>(`/products/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   duplicate: (id: number) => request<Product>(`/products/${id}/duplicate`, { method: "POST" }),
   remove: (id: number) => request<void>(`/products/${id}`, { method: "DELETE" }),
@@ -302,6 +307,7 @@ export const adminApi = {
   replyMessage: (id: number, data: { subject: string; body: string; include_original: boolean; copy_to_company: boolean }) =>
     request<Message>(`/messages/${id}/reply`, { method: "POST", body: JSON.stringify(data) }),
   removeMessage: (id: number) => request<void>(`/messages/${id}`, { method: "DELETE" }),
+  deleteMessages: (body: BulkDelete) => bulkDelete("/messages/delete", body),
 
   visitorStats: (days: number) => request<VisitorStats>(`/visitors/stats?days=${days}`),
   visitors: (params: { days: number; q?: string; page?: number }) => {
@@ -312,6 +318,7 @@ export const adminApi = {
   },
   visitor: (id: number) => request<VisitorDetail>(`/visitors/${id}`),
   removeVisitor: (id: number) => request<void>(`/visitors/${id}`, { method: "DELETE" }),
+  deleteVisitors: (body: BulkDelete) => bulkDelete("/visitors/delete", body),
 
   nemanjaStatus: () => request<NemanjaStatus>("/nemanja/status"),
   nemanjaTest: (data: { mode: "connection" | "question" | "nemanja"; question?: string; api_key?: string; model?: string }) =>
@@ -322,6 +329,8 @@ export const adminApi = {
     request<ChatDetail>(`/chats/${id}/reply`, { method: "POST", body: JSON.stringify({ text, email_customer: emailCustomer }) }),
   chatStatus: (id: number, status: "ai" | "human" | "closed") =>
     request<ChatDetail>(`/chats/${id}/status`, { method: "POST", body: JSON.stringify({ status }) }),
+  removeChat: (id: number) => request<void>(`/chats/${id}`, { method: "DELETE" }),
+  deleteChats: (body: BulkDelete) => bulkDelete("/chats/delete", body),
   notes: (status: string) => request<{ items: KnowledgeNote[]; counts: Record<"pending" | "approved" | "rejected", number> }>(`/knowledge?status=${status}`),
   updateNote: (id: number, data: { status?: string; content?: string; product_slug?: string }) =>
     request<KnowledgeNote>(`/knowledge/${id}`, { method: "PATCH", body: JSON.stringify(data) }),

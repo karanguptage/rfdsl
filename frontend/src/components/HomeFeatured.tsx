@@ -1,5 +1,5 @@
 import { productBadges } from "@/components/ProductBadges";
-import ProductCarousel, { type Product } from "@/components/ProductCarousel";
+import ProductCarousel, { type PanelTone, type Product } from "@/components/ProductCarousel";
 import { fetchFeatured } from "@/lib/api";
 import type { ProductSummary } from "@/lib/catalog";
 
@@ -7,11 +7,13 @@ import type { ProductSummary } from "@/lib/catalog";
 // "The most popular products" (Popular), "New arrivals" (New arrival) and
 // "Special offers" (On sale). A section with no flagged (published) products
 // isn't shown at all. Read per request, so changes in /admin show straight away.
+// Each section's panels (name strip + hover tint) use the colour of its badge
+// in ProductBadges.tsx: Popular navy, New maroon, Sale rust.
 const SECTIONS = [
-  { key: "popular", id: "popular-products-title", title: "The most popular products" },
-  { key: "new", id: "new-arrivals-title", title: "New arrivals" },
-  { key: "sale", id: "special-offers-title", title: "Special offers" },
-] as const;
+  { key: "popular", id: "popular-products-title", title: "The most popular products", tone: { strip: "bg-[#0b1f45]", tint: "bg-[#0b1f45]/50" } },
+  { key: "new", id: "new-arrivals-title", title: "New arrivals", tone: { strip: "bg-[#6e0303]", tint: "bg-[#6e0303]/50" } },
+  { key: "sale", id: "special-offers-title", title: "Special offers", tone: { strip: "bg-[#651803]", tint: "bg-[#651803]/50" } },
+] as const satisfies readonly { key: string; id: string; title: string; tone: PanelTone }[];
 
 function toPanel(p: ProductSummary, section: (typeof SECTIONS)[number]["key"]): Product {
   // Show the badge that matches the section first (e.g. the sale label in "Special offers").
@@ -47,7 +49,7 @@ export default async function HomeFeatured() {
               </h2>
               <span aria-hidden="true" className="mb-[0.9em] hidden h-px flex-1 bg-linear-to-r from-slate-300 to-transparent sm:block" />
             </div>
-            <ProductCarousel products={items.map((p) => toPanel(p, s.key))} className="mt-8 lg:mt-10" />
+            <ProductCarousel products={items.map((p) => toPanel(p, s.key))} tone={s.tone} className="mt-8 lg:mt-10" />
           </section>
         );
       })}
